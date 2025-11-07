@@ -14,3 +14,9 @@ The application leverages external libraries to perform the audio conversion. Wh
 
 ![figure_01.png](docs/images/figure_01.png)
 
+## Technologies Used
+The `opus2mp3` script is built using the following key technologies:
+- **PySide6:** For creating the graphical user interface, providing a modern and responsive experience.
+- **FFmpeg:** An essential open-source multimedia framework used for handling the audio conversion from Opus to MP3 format.
+- **Python:** The core programming language for the application logic.
+
