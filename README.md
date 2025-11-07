@@ -10,7 +10,7 @@ Key Features:
 - **Error Handling:** Provides feedback on any conversion failures.
 
 How it Works:
-The application leverages external libraries to perform the audio conversion. When you select Opus files and initiate the conversion, the script processes each file, transcodes the audio data from Opus to MP3, and saves the new MP3 files to your specified output directory.
+The application leverages external libraries to perform the audio conversion. This includes a two-step pre-processing phase for each Opus file to normalize the music level, ensuring consistent playback volume. When you select Opus files and initiate the conversion, the script processes each file, transcodes the audio data from Opus to MP3, and saves the new MP3 files to your specified output directory.
 
 ![figure_01.png](docs/images/figure_01.png)
 
