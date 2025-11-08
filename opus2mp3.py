@@ -721,11 +721,7 @@ class OpusToMp3Converter(QWidget):
                     LogType.INFO,
                     f"Found {len(mp3_files)} MP3 files in destination folder.",
                 )
-                if mp3_files:
-                    self.append_log(
-                        LogType.INFO,
-                        f"Found MP3 files: {', '.join(mp3_files)}",
-                    )
+
             except FileNotFoundError:
                 self.append_log(
                     LogType.ERROR, f"Destination directory not found: {dir_path}"
