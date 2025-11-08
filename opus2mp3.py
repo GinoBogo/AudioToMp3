@@ -49,6 +49,7 @@ class LogType(Enum):
     CONVERTING = ("#0000FF", "CONVERTING")
     FINISHED = ("#008000", "FINISHED")
     ERROR = ("#FF0000", "ERROR")
+    WARNING = ("#FFA500", "WARNING")
     INFO = ("#333333", "INFO")
 
     ############################################################################
@@ -545,6 +546,9 @@ class OpusToMp3Converter(QWidget):
         self.dest_button = QPushButton("Browse")
         self.dest_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.dest_button.clicked.connect(self.browse_destination)
+        self.dest_refresh_button = QPushButton("Refresh")
+        self.dest_refresh_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.dest_refresh_button.clicked.connect(self.refresh_destination)
 
         # Add widgets to grid
         grid_layout.addWidget(src_label, 0, 0)
@@ -554,6 +558,7 @@ class OpusToMp3Converter(QWidget):
         grid_layout.addWidget(dest_label, 1, 0)
         grid_layout.addWidget(self.dest_line_edit, 1, 1)
         grid_layout.addWidget(self.dest_button, 1, 2)
+        grid_layout.addWidget(self.dest_refresh_button, 1, 3)
 
         parent_layout.addLayout(grid_layout)
 
@@ -715,21 +720,35 @@ class OpusToMp3Converter(QWidget):
         dir_path = self._get_existing_directory("Select Destination Directory")
         if dir_path:
             self.dest_line_edit.setText(dir_path)
-            try:
-                mp3_files = [
-                    f
-                    for f in os.listdir(dir_path)
-                    if f.endswith(".mp3") and not f.startswith(".")
-                ]
-                self.append_log(
-                    LogType.INFO,
-                    f"Found {len(mp3_files)} MP3 files in destination folder.",
-                )
+            self.refresh_destination()
 
-            except FileNotFoundError:
-                self.append_log(
-                    LogType.ERROR, f"Destination directory not found: {dir_path}"
-                )
+    ############################################################################
+
+    def refresh_destination(self):
+        """Refreshes the count of MP3 files in the destination directory.
+
+        Reads the current destination path and updates the log with the number
+        of MP3 files found, without opening a directory selection dialog.
+        """
+        dir_path = self.dest_line_edit.text()
+        if not dir_path:
+            self.append_log(LogType.WARNING, "Destination directory not set.")
+            return
+
+        try:
+            mp3_files = [
+                f
+                for f in os.listdir(dir_path)
+                if f.endswith(".mp3") and not f.startswith(".")
+            ]
+            self.append_log(
+                LogType.INFO,
+                f"Found {len(mp3_files)} MP3 files in destination folder.",
+            )
+        except FileNotFoundError:
+            self.append_log(
+                LogType.ERROR, f"Destination directory not found: {dir_path}"
+            )
 
     ############################################################################
 
@@ -762,7 +781,7 @@ class OpusToMp3Converter(QWidget):
         """
         src_dir = self.src_line_edit.text()
         if not os.path.isdir(src_dir):
-            self.output_log.append("Source directory is not valid.")
+            self.append_log(LogType.WARNING, "Source directory is not valid.")
             return False
         return True
 
