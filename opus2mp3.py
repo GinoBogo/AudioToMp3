@@ -10,31 +10,31 @@ including a two-pass loudnorm filter for consistent audio levels. The applicatio
 supports batch conversion, progress tracking, and logging of conversion events.
 """
 
+import concurrent.futures
 import json
-import sys
 import os
 import subprocess
+import sys
 import threading
-import concurrent.futures
+from enum import Enum
+
 from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtWidgets import (
     QApplication,
-    QWidget,
-    QVBoxLayout,
-    QHBoxLayout,
-    QGridLayout,
-    QLineEdit,
-    QPushButton,
     QFileDialog,
-    QProgressBar,
-    QTextEdit,
+    QGridLayout,
+    QHBoxLayout,
+    QHeaderView,
     QLabel,
+    QLineEdit,
+    QProgressBar,
+    QPushButton,
     QTableWidget,
     QTableWidgetItem,
-    QHeaderView,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
 )
-from enum import Enum
-
 
 ################################################################################
 
@@ -265,13 +265,17 @@ class ConversionThread(QThread):
         """
         json_start = stderr.find("{")
         json_end = stderr.rfind("}")
+
         if json_start == -1 or json_end == -1:
             raise ValueError("Could not find loudnorm stats in FFmpeg output.")
+
         json_str = stderr[json_start : json_end + 1]
         stats = json.loads(json_str)
+
         for key, value in stats.items():
             if key != "normalization_type":
                 stats[key] = float(value)
+
         return stats
 
     ############################################################################
@@ -289,6 +293,7 @@ class ConversionThread(QThread):
         """
         if returncode == 0:
             self.output.emit(LogType.FINISHED, f"{opus_file}.")
+
             with self.lock:
                 self.completed_files += 1
                 progress = int(
@@ -524,8 +529,10 @@ class OpusToMp3Converter(QWidget):
         self.src_line_edit = QLineEdit()
         self.src_line_edit.setPlaceholderText("Source Directory")
         self.src_button = QPushButton("Browse")
+        self.src_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.src_button.clicked.connect(self.browse_source)
         self.refresh_button = QPushButton("Refresh")
+        self.refresh_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.refresh_button.clicked.connect(self.refresh_files)
 
         # Destination directory controls
@@ -536,6 +543,7 @@ class OpusToMp3Converter(QWidget):
         self.dest_line_edit = QLineEdit()
         self.dest_line_edit.setPlaceholderText("Destination Directory")
         self.dest_button = QPushButton("Browse")
+        self.dest_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.dest_button.clicked.connect(self.browse_destination)
 
         # Add widgets to grid
@@ -587,8 +595,10 @@ class OpusToMp3Converter(QWidget):
         """
         select_layout = QHBoxLayout()
         self.select_all_button = QPushButton("Select All")
+        self.select_all_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.select_all_button.clicked.connect(self.select_all)
         self.deselect_all_button = QPushButton("Deselect All")
+        self.deselect_all_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.deselect_all_button.clicked.connect(self.deselect_all)
         select_layout.addWidget(self.select_all_button)
         select_layout.addWidget(self.deselect_all_button)
@@ -608,8 +618,10 @@ class OpusToMp3Converter(QWidget):
         """
         button_layout = QHBoxLayout()
         self.convert_button = QPushButton("Convert")
+        self.convert_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.convert_button.clicked.connect(self.start_conversion)
         self.cancel_button = QPushButton("Cancel")
+        self.cancel_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.cancel_button.clicked.connect(self.cancel_conversion)
         self.cancel_button.setEnabled(False)
         button_layout.addWidget(self.convert_button)
