@@ -10,6 +10,7 @@ including a two-pass loudnorm filter for consistent audio levels. The applicatio
 supports batch conversion, progress tracking, and logging of conversion events.
 """
 
+import configparser
 import concurrent.futures
 import json
 import os
@@ -35,6 +36,8 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+
+CONFIG_FILE = "opus2mp3.cfg"
 
 ################################################################################
 
@@ -445,6 +448,40 @@ class OpusToMp3Converter(QWidget):
         self.conversion_thread = None
         self._setup_ui()
         self._apply_styles()
+        self._load_settings()
+
+    ############################################################################
+
+    def _load_settings(self):
+        """Loads window settings from the configuration file."""
+        config = configparser.ConfigParser()
+        config.read(CONFIG_FILE)
+
+        width = config.getint("MainWindow", "width", fallback=800)
+        height = config.getint("MainWindow", "height", fallback=600)
+        x_pos = config.getint("MainWindow", "x_pos", fallback=100)
+        y_pos = config.getint("MainWindow", "y_pos", fallback=100)
+
+        self.setGeometry(x_pos, y_pos, width, height)
+
+    ############################################################################
+
+    def _save_settings(self):
+        """Saves current window settings to the configuration file."""
+        config = configparser.ConfigParser()
+        # Read existing config to preserve other sections if they exist
+        config.read(CONFIG_FILE)
+
+        if "MainWindow" not in config:
+            config["MainWindow"] = {}
+
+        config["MainWindow"]["width"] = str(self.width())
+        config["MainWindow"]["height"] = str(self.height())
+        config["MainWindow"]["x_pos"] = str(self.x())
+        config["MainWindow"]["y_pos"] = str(self.y())
+
+        with open(CONFIG_FILE, "w") as configfile:
+            config.write(configfile)
 
     ############################################################################
 
@@ -1144,6 +1181,13 @@ class OpusToMp3Converter(QWidget):
         self.output_log.append(f'<font color="{color}">{escaped_message}</font>')
 
     ############################################################################
+
+    def closeEvent(self, event):
+        """Overrides the close event to save window settings."""
+        self._save_settings()
+        event.accept()
+
+    ################################################################################
 
     def _escape_html(self, text):
         """Escapes HTML special characters in text.
