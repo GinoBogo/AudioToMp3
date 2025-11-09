@@ -349,7 +349,6 @@ class ConversionThread(QThread):
                     data=picture.data,
                 )
             )
-            )
         except Exception as e:
             self.output.emit(
                 LogType.WARNING,
