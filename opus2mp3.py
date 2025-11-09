@@ -369,12 +369,6 @@ class ConversionThread(QThread):
             src_opus_path (str): The absolute path to the source Opus file.
             dest_mp3_path (str): The absolute path to the destination MP3 file.
         """
-        TAG_MAPPING = {
-            "title": TIT2,
-            "artist": TPE1,
-            "album": TALB,
-            "genre": TCON,
-        }
         try:
             opus_audio = OggOpus(src_opus_path)
             mp3_audio = MP3(dest_mp3_path, ID3=ID3)
@@ -383,59 +377,127 @@ class ConversionThread(QThread):
                 mp3_audio.tags = ID3()
 
             if opus_audio.tags:
-                for tag_name, tag_value in opus_audio.tags.items():
-                    if tag_name == "metadata_block_picture":
-                        continue
-
-                    if tag_name == "date":
-                        try:
-                            # Handle both list and non-list values for date
-                            date_values = (
-                                tag_value
-                                if isinstance(tag_value, list)
-                                else [tag_value]
-                            )
-                            years = []
-                            for date_val in date_values:
-                                try:
-                                    year = int(date_val)
-                                    years.append(str(year))
-                                except (ValueError, TypeError):
-                                    self.output.emit(
-                                        LogType.WARNING,
-                                        f"Invalid date format in {os.path.basename(src_opus_path)}: '{date_val}'. Skipping this date value.",
-                                    )
-                            if years:
-                                mp3_audio.tags["TDRC"] = TDRC(encoding=3, text=years)
-                        except Exception as e:
-                            self.output.emit(
-                                LogType.WARNING,
-                                f"Error processing date tag for {os.path.basename(src_opus_path)}: {e}",
-                            )
-                    elif tag_name in TAG_MAPPING:
-                        id3_frame_class = TAG_MAPPING[tag_name]
-                        # Handle both list and non-list tag values
-                        text_values = (
-                            tag_value
-                            if isinstance(tag_value, list)
-                            else [str(tag_value)]
-                        )
-                        # Ensure all values are strings
-                        text_values = [str(v) for v in text_values if v is not None]
-                        if text_values:  # Only add if we have valid values
-                            mp3_audio.tags[id3_frame_class.__name__] = id3_frame_class(
-                                encoding=3, text=text_values
-                            )
-
-            mp3_audio.save()
-            self.output.emit(
-                LogType.INFO,
-                f"Copied ID3 tags from {os.path.basename(src_opus_path)} to {os.path.basename(dest_mp3_path)}.",
-            )
+                self._process_opus_tags(
+                    opus_audio, mp3_audio, os.path.basename(src_opus_path)
+                )
+                mp3_audio.save()
+                self.output.emit(
+                    LogType.INFO,
+                    f"Copied ID3 tags from {os.path.basename(src_opus_path)} to {os.path.basename(dest_mp3_path)}.",
+                )
         except Exception as e:
             self.output.emit(
                 LogType.WARNING,
-                f"Failed to copy ID3 tags to {os.path.basename(dest_mp3_path)}: {e}",
+                f"Error copying ID3 tags from {os.path.basename(src_opus_path)} to {os.path.basename(dest_mp3_path)}: {e}",
+            )
+
+    ############################################################################
+
+    def _process_opus_tags(self, opus_audio, mp3_audio, src_filename):
+        """Process and copy tags from Opus to MP3.
+
+        Args:
+            opus_audio: The Opus audio file object.
+            mp3_audio: The MP3 audio file object to copy tags to.
+            src_filename: The source filename for error messages.
+        """
+        TAG_MAPPING = {
+            "title": TIT2,
+            "artist": TPE1,
+            "album": TALB,
+            "genre": TCON,
+        }
+
+        for tag_name, tag_value in opus_audio.tags.items():
+            if tag_name == "metadata_block_picture":
+                self._handle_cover_art(tag_value, mp3_audio)
+                continue
+
+            if tag_name == "date":
+                self._handle_date_tag(tag_value, mp3_audio, src_filename)
+            elif tag_name in TAG_MAPPING:
+                self._copy_simple_tag(tag_name, tag_value, TAG_MAPPING, mp3_audio)
+
+    ############################################################################
+
+    def _handle_cover_art(self, picture_data, mp3_audio):
+        """Handle cover art from metadata block picture.
+
+        Args:
+            picture_data: The picture data from the Opus file.
+            mp3_audio: The MP3 audio file object to add the cover art to.
+        """
+        try:
+            if not picture_data:
+                return
+
+            if isinstance(picture_data, list):
+                picture_data = picture_data[0]
+
+            if isinstance(picture_data, str):
+                picture = Picture(base64.b64decode(picture_data))
+            else:
+                picture = picture_data
+
+            if hasattr(picture, "data"):
+                self._copy_cover_art(mp3_audio.filename, picture)
+        except Exception as e:
+            self.output.emit(
+                LogType.WARNING,
+                f"Failed to process cover art: {e}",
+            )
+
+    ############################################################################
+
+    def _copy_simple_tag(self, tag_name, tag_value, tag_mapping, mp3_audio):
+        """Copy a simple tag from Opus to MP3.
+
+        Args:
+            tag_name: The name of the tag to copy.
+            tag_value: The value of the tag.
+            tag_mapping: Dictionary mapping tag names to ID3 frame classes.
+            mp3_audio: The MP3 audio file object to add the tag to.
+        """
+        id3_frame_class = tag_mapping[tag_name]
+        # Handle both list and non-list tag values
+        text_values = tag_value if isinstance(tag_value, list) else [str(tag_value)]
+        # Ensure all values are strings
+        text_values = [str(v) for v in text_values if v is not None]
+        if text_values:  # Only add if we have valid values
+            mp3_audio.tags[id3_frame_class.__name__] = id3_frame_class(
+                encoding=3, text=text_values
+            )
+
+    ############################################################################
+
+    def _handle_date_tag(self, tag_value, mp3_audio, src_filename):
+        """Handle date tag conversion from Opus to MP3.
+
+        Args:
+            tag_value: The date value from the Opus file.
+            mp3_audio: The MP3 audio file object to add the date tag to.
+            src_filename: The source filename for error messages.
+        """
+        try:
+            date_values = tag_value if isinstance(tag_value, list) else [tag_value]
+            years = []
+
+            for date_val in date_values:
+                try:
+                    year = int(date_val)
+                    years.append(str(year))
+                except (ValueError, TypeError):
+                    self.output.emit(
+                        LogType.WARNING,
+                        f"Invalid date format in {src_filename}: '{date_val}'. Skipping this date value.",
+                    )
+
+            if years:
+                mp3_audio.tags["TDRC"] = TDRC(encoding=3, text=years)
+        except Exception as e:
+            self.output.emit(
+                LogType.WARNING,
+                f"Error processing date tag for {src_filename}: {e}",
             )
 
     ############################################################################
