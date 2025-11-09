@@ -349,10 +349,6 @@ class ConversionThread(QThread):
                     data=picture.data,
                 )
             )
-            mp3_audio.save()
-            self.output.emit(
-                LogType.INFO,
-                f"Copied cover art to {os.path.basename(mp3_path)}.",
             )
         except Exception as e:
             self.output.emit(
@@ -441,6 +437,10 @@ class ConversionThread(QThread):
 
             if hasattr(picture, "data"):
                 self._copy_cover_art(mp3_audio.filename, picture)
+                self.output.emit(
+                    LogType.INFO,
+                    f"Copied cover art to {os.path.basename(mp3_audio.filename)}.",
+                )
         except Exception as e:
             self.output.emit(
                 LogType.WARNING,
