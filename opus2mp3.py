@@ -480,8 +480,8 @@ class OpusToMp3Converter(QWidget):
         config["MainWindow"]["x_pos"] = str(self.x())
         config["MainWindow"]["y_pos"] = str(self.y())
 
-        with open(CONFIG_FILE, "w") as configfile:
-            config.write(configfile)
+        with open(CONFIG_FILE, "w") as config_file:
+            config.write(config_file)
 
     ############################################################################
 
