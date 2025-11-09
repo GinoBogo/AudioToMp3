@@ -19,6 +19,13 @@ import sys
 import threading
 from enum import Enum
 
+import base64
+from mutagen.id3 import ID3
+from mutagen.id3._frames import APIC, TIT2, TPE1, TALB, TDRC, TCON
+from mutagen.mp3 import MP3
+from mutagen.oggopus import OggOpus
+from mutagen.flac import Picture
+
 from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtWidgets import (
     QApplication,
@@ -80,6 +87,8 @@ class ConversionThread(QThread):
 
     progress = Signal(int)
     output = Signal(LogType, str)
+
+    ############################################################################
 
     def __init__(self, files_to_convert, dest_dir):
         """Initializes the ConversionThread.
@@ -313,6 +322,228 @@ class ConversionThread(QThread):
 
     ############################################################################
 
+    def _copy_cover_art(self, mp3_path, picture):
+        """Helper function to add cover art to an MP3 file.
+
+        Args:
+            mp3_path (str): The absolute path to the MP3 file.
+            picture (Picture): The mutagen Picture object to add.
+        """
+        try:
+            mp3_audio = MP3(mp3_path, ID3=ID3)
+
+            # Ensure ID3 tags exist
+            if mp3_audio.tags is None:
+                mp3_audio.tags = ID3()
+                mp3_audio.save()  # Save the newly created tags
+
+            # Remove existing APIC frames to avoid duplicates
+            mp3_audio.tags.delall("APIC")
+
+            mp3_audio.tags.add(
+                APIC(
+                    encoding=3,
+                    mime=picture.mime,
+                    type=3,  # 3 is for the front cover
+                    desc="Cover",
+                    data=picture.data,
+                )
+            )
+            mp3_audio.save()
+            self.output.emit(
+                LogType.INFO,
+                f"Copied cover art to {os.path.basename(mp3_path)}.",
+            )
+        except Exception as e:
+            self.output.emit(
+                LogType.WARNING,
+                f"Failed to add cover art to {os.path.basename(mp3_path)}: {e}",
+            )
+
+    ############################################################################
+
+    def _copy_id3_tags(self, src_opus_path, dest_mp3_path):
+        """Copies ID3 tags from an Opus file to an MP3 file.
+
+        Args:
+            src_opus_path (str): The absolute path to the source Opus file.
+            dest_mp3_path (str): The absolute path to the destination MP3 file.
+        """
+        TAG_MAPPING = {
+            "title": TIT2,
+            "artist": TPE1,
+            "album": TALB,
+            "genre": TCON,
+        }
+        try:
+            opus_audio = OggOpus(src_opus_path)
+            mp3_audio = MP3(dest_mp3_path, ID3=ID3)
+
+            if mp3_audio.tags is None:
+                mp3_audio.tags = ID3()
+
+            if opus_audio.tags:
+                for tag_name, tag_value in opus_audio.tags.items():
+                    if tag_name == "metadata_block_picture":
+                        continue
+
+                    if tag_name == "date":
+                        try:
+                            # Handle both list and non-list values for date
+                            date_values = (
+                                tag_value
+                                if isinstance(tag_value, list)
+                                else [tag_value]
+                            )
+                            years = []
+                            for date_val in date_values:
+                                try:
+                                    year = int(date_val)
+                                    years.append(str(year))
+                                except (ValueError, TypeError):
+                                    self.output.emit(
+                                        LogType.WARNING,
+                                        f"Invalid date format in {os.path.basename(src_opus_path)}: '{date_val}'. Skipping this date value.",
+                                    )
+                            if years:
+                                mp3_audio.tags["TDRC"] = TDRC(encoding=3, text=years)
+                        except Exception as e:
+                            self.output.emit(
+                                LogType.WARNING,
+                                f"Error processing date tag for {os.path.basename(src_opus_path)}: {e}",
+                            )
+                    elif tag_name in TAG_MAPPING:
+                        id3_frame_class = TAG_MAPPING[tag_name]
+                        # Handle both list and non-list tag values
+                        text_values = (
+                            tag_value
+                            if isinstance(tag_value, list)
+                            else [str(tag_value)]
+                        )
+                        # Ensure all values are strings
+                        text_values = [str(v) for v in text_values if v is not None]
+                        if text_values:  # Only add if we have valid values
+                            mp3_audio.tags[id3_frame_class.__name__] = id3_frame_class(
+                                encoding=3, text=text_values
+                            )
+
+            mp3_audio.save()
+            self.output.emit(
+                LogType.INFO,
+                f"Copied ID3 tags from {os.path.basename(src_opus_path)} to {os.path.basename(dest_mp3_path)}.",
+            )
+        except Exception as e:
+            self.output.emit(
+                LogType.WARNING,
+                f"Failed to copy ID3 tags to {os.path.basename(dest_mp3_path)}: {e}",
+            )
+
+    ############################################################################
+
+    def _get_picture_from_metadata_block(
+        self, metadata_block_pictures, src_opus_basename
+    ):
+        if not metadata_block_pictures:
+            self.output.emit(
+                LogType.WARNING,
+                f"No metadata block pictures found in {src_opus_basename}",
+            )
+            return None
+
+        if not isinstance(metadata_block_pictures, list):
+            metadata_block_pictures = [metadata_block_pictures]
+
+        for pic_data_b64 in metadata_block_pictures:
+            try:
+                # Handle both string and bytes input
+                if isinstance(pic_data_b64, str):
+                    # If it's a string, it might be base64 encoded
+                    try:
+                        pic_data = base64.b64decode(pic_data_b64, validate=True)
+                    except Exception:
+                        # If base64 decode fails, try using it as-is
+                        pic_data = pic_data_b64.encode("utf-8")
+                else:
+                    pic_data = pic_data_b64
+
+                if not pic_data:
+                    continue
+
+                # Try to create a Picture object from the data
+                try:
+                    picture = Picture(pic_data)
+                    if picture.type == 3:  # 3 is for the front cover
+                        return picture
+                except Exception as pic_e:
+                    # If creating Picture fails, try to create APIC frame directly
+                    try:
+                        # Try to determine MIME type from data
+                        mime = "image/jpeg"  # default to jpeg
+                        if pic_data.startswith(b"\x89PNG"):
+                            mime = "image/png"
+
+                        return APIC(
+                            encoding=3,  # UTF-8
+                            mime=mime,
+                            type=3,  # 3 is for the front cover
+                            desc="Cover",
+                            data=pic_data,
+                        )
+                    except Exception as apic_e:
+                        self.output.emit(
+                            LogType.WARNING,
+                            f"Failed to create APIC frame for {src_opus_basename}: {apic_e}",
+                        )
+                        continue
+
+            except Exception as decode_e:
+                self.output.emit(
+                    LogType.WARNING,
+                    f"Failed to process cover art for {src_opus_basename}: {decode_e}",
+                )
+                continue
+
+        self.output.emit(
+            LogType.WARNING,
+            f"No valid front cover found in {src_opus_basename}",
+        )
+        return None
+
+    ############################################################################
+
+    def _find_front_cover(self, src_opus_path, src_opus_basename):
+        """Finds the front cover Picture object from an OggOpus file.
+
+        Args:
+            src_opus_path (str): The absolute path to the source Opus file.
+            src_opus_basename (str): The base name of the source Opus file for logging.
+
+        Returns:
+            Picture or None: The front cover Picture object if found, otherwise None.
+        """
+        try:
+            opus_audio = OggOpus(src_opus_path)
+        except Exception as e:
+            self.output.emit(
+                LogType.WARNING,
+                f"Failed to create OggOpus object for {src_opus_basename}: {e}",
+            )
+            return None
+
+        if opus_audio.tags:
+            metadata_block_pictures = opus_audio.tags.get("metadata_block_picture")
+            return self._get_picture_from_metadata_block(
+                metadata_block_pictures, src_opus_basename
+            )
+        else:
+            self.output.emit(
+                LogType.WARNING,
+                f"No tags found in {src_opus_basename}.",
+            )
+        return None
+
+    ############################################################################
+
     def convert_file(self, src_path):
         """Converts a single Opus file to MP3.
 
@@ -348,6 +579,12 @@ class ConversionThread(QThread):
                 second_pass_command, opus_file
             )
             self._handle_conversion_result(returncode, output, opus_file)
+            if returncode == 0:
+                # Find and copy cover art
+                picture = self._find_front_cover(src_path, opus_file)
+                if picture:
+                    self._copy_cover_art(dest_path, picture)
+                self._copy_id3_tags(src_path, dest_path)
 
         except FileNotFoundError as e:
             self.output.emit(LogType.ERROR, str(e))
