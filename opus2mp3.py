@@ -415,6 +415,28 @@ class ConversionThread(QThread):
 
     ############################################################################
 
+    def _get_picture_from_picture_data(self, picture_data):
+        """Extracts a Picture object from picture data.
+
+        Args:
+            picture_data: The picture data from the Opus file.
+
+        Returns:
+            A Picture object or the original picture data.
+        """
+        if not picture_data:
+            return None
+
+        if isinstance(picture_data, list):
+            picture_data = picture_data[0]
+
+        if isinstance(picture_data, str):
+            return Picture(base64.b64decode(picture_data))
+        else:
+            return picture_data
+
+    ############################################################################
+
     def _handle_cover_art(self, picture_data, mp3_audio):
         """Handle cover art from metadata block picture.
 
@@ -423,18 +445,8 @@ class ConversionThread(QThread):
             mp3_audio: The MP3 audio file object to add the cover art to.
         """
         try:
-            if not picture_data:
-                return
-
-            if isinstance(picture_data, list):
-                picture_data = picture_data[0]
-
-            if isinstance(picture_data, str):
-                picture = Picture(base64.b64decode(picture_data))
-            else:
-                picture = picture_data
-
-            if hasattr(picture, "data"):
+            picture = self._get_picture_from_picture_data(picture_data)
+            if picture and hasattr(picture, "data"):
                 self._copy_cover_art(mp3_audio.filename, picture)
                 self.output.emit(
                     LogType.INFO,
@@ -469,6 +481,19 @@ class ConversionThread(QThread):
 
     ############################################################################
 
+    def _parse_year_from_date(self, date_val, src_filename):
+        """Parses a year from a date value."""
+        try:
+            return str(int(date_val))
+        except (ValueError, TypeError):
+            self.output.emit(
+                LogType.WARNING,
+                f"Invalid date format in {src_filename}: '{date_val}'. Skipping this date value.",
+            )
+            return None
+
+    ############################################################################
+
     def _handle_date_tag(self, tag_value, mp3_audio, src_filename):
         """Handle date tag conversion from Opus to MP3.
 
@@ -479,17 +504,11 @@ class ConversionThread(QThread):
         """
         try:
             date_values = tag_value if isinstance(tag_value, list) else [tag_value]
-            years = []
-
-            for date_val in date_values:
-                try:
-                    year = int(date_val)
-                    years.append(str(year))
-                except (ValueError, TypeError):
-                    self.output.emit(
-                        LogType.WARNING,
-                        f"Invalid date format in {src_filename}: '{date_val}'. Skipping this date value.",
-                    )
+            years = [
+                year
+                for date_val in date_values
+                if (year := self._parse_year_from_date(date_val, src_filename))
+            ]
 
             if years:
                 mp3_audio.tags["TDRC"] = TDRC(encoding=3, text=years)
@@ -501,9 +520,76 @@ class ConversionThread(QThread):
 
     ############################################################################
 
+    def _decode_picture_data(self, pic_data_b64, src_opus_basename):
+        """Decodes picture data from base64 or bytes."""
+        try:
+            if isinstance(pic_data_b64, str):
+                try:
+                    return base64.b64decode(pic_data_b64, validate=True)
+                except Exception:
+                    return pic_data_b64.encode("utf-8")
+            return pic_data_b64
+        except Exception as e:
+            self.output.emit(
+                LogType.WARNING,
+                f"Failed to decode picture data for {src_opus_basename}: {e}",
+            )
+            return None
+
+    ############################################################################
+
+    def _create_picture_object(self, pic_data, src_opus_basename):
+        """Tries to create a Picture object from the data."""
+        try:
+            picture = Picture(pic_data)
+            if picture.type == 3:  # 3 is for the front cover
+                return picture
+        except Exception:
+            # If creating Picture fails, we'll try creating an APIC frame next.
+            pass
+
+    ############################################################################
+
+    def _create_apic_frame(self, pic_data, src_opus_basename):
+        """Creates an APIC frame as a fallback."""
+        try:
+            mime = "image/jpeg"  # default to jpeg
+            if pic_data.startswith(b"\x89PNG"):
+                mime = "image/png"
+
+            return APIC(
+                encoding=3,  # UTF-8
+                mime=mime,
+                type=3,  # 3 is for the front cover
+                desc="Cover",
+                data=pic_data,
+            )
+        except Exception as e:
+            self.output.emit(
+                LogType.WARNING,
+                f"Failed to create APIC frame for {src_opus_basename}: {e}",
+            )
+            return None
+
+    ############################################################################
+
     def _get_picture_from_metadata_block(
         self, metadata_block_pictures, src_opus_basename
     ):
+        """Extracts the front cover art from the metadata of an Opus file.
+
+        This function iterates through a list of picture data blocks, decodes
+        them, and attempts to create a Picture object or an APIC frame.
+
+        Args:
+            metadata_block_pictures (list or str): A list of base64-encoded
+            picture data blocks, or a single block. src_opus_basename (str): The
+            base name of the source Opus file, used for logging.
+
+        Returns:
+            mutagen.flac.Picture or mutagen.id3.APIC or None: The extracted
+            cover art, or None if no valid front cover is found.
+        """
         if not metadata_block_pictures:
             self.output.emit(
                 LogType.WARNING,
@@ -515,54 +601,17 @@ class ConversionThread(QThread):
             metadata_block_pictures = [metadata_block_pictures]
 
         for pic_data_b64 in metadata_block_pictures:
-            try:
-                # Handle both string and bytes input
-                if isinstance(pic_data_b64, str):
-                    # If it's a string, it might be base64 encoded
-                    try:
-                        pic_data = base64.b64decode(pic_data_b64, validate=True)
-                    except Exception:
-                        # If base64 decode fails, try using it as-is
-                        pic_data = pic_data_b64.encode("utf-8")
-                else:
-                    pic_data = pic_data_b64
-
-                if not pic_data:
-                    continue
-
-                # Try to create a Picture object from the data
-                try:
-                    picture = Picture(pic_data)
-                    if picture.type == 3:  # 3 is for the front cover
-                        return picture
-                except Exception as pic_e:
-                    # If creating Picture fails, try to create APIC frame directly
-                    try:
-                        # Try to determine MIME type from data
-                        mime = "image/jpeg"  # default to jpeg
-                        if pic_data.startswith(b"\x89PNG"):
-                            mime = "image/png"
-
-                        return APIC(
-                            encoding=3,  # UTF-8
-                            mime=mime,
-                            type=3,  # 3 is for the front cover
-                            desc="Cover",
-                            data=pic_data,
-                        )
-                    except Exception as apic_e:
-                        self.output.emit(
-                            LogType.WARNING,
-                            f"Failed to create APIC frame for {src_opus_basename}: {apic_e}",
-                        )
-                        continue
-
-            except Exception as decode_e:
-                self.output.emit(
-                    LogType.WARNING,
-                    f"Failed to process cover art for {src_opus_basename}: {decode_e}",
-                )
+            pic_data = self._decode_picture_data(pic_data_b64, src_opus_basename)
+            if not pic_data:
                 continue
+
+            picture = self._create_picture_object(pic_data, src_opus_basename)
+            if picture:
+                return picture
+
+            apic_frame = self._create_apic_frame(pic_data, src_opus_basename)
+            if apic_frame:
+                return apic_frame
 
         self.output.emit(
             LogType.WARNING,
