@@ -895,7 +895,7 @@ class OpusToMp3Converter(QWidget):
         grid_layout.addWidget(src_label, 0, 0)
         grid_layout.addWidget(self.src_line_edit, 0, 1)
         grid_layout.addWidget(self.src_button, 0, 2)
-        grid_layout.addWidget(self.refresh_button, 0, 3)
+        grid_layout.addWidget(self.src_refresh_button, 0, 3)
         grid_layout.addWidget(dest_label, 1, 0)
         grid_layout.addWidget(self.dest_line_edit, 1, 1)
         grid_layout.addWidget(self.dest_button, 1, 2)
