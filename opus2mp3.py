@@ -142,6 +142,23 @@ class OpusToMp3Converter(QWidget):
             QPushButton:pressed {
                 background-color: #004578;
             }
+
+            QPushButton#convertButton,
+            QPushButton#cancelButton {
+                background-color: #FFD700;
+                color: #000;
+            }
+
+            QPushButton#convertButton:hover,
+            QPushButton#cancelButton:hover {
+                background-color: #d9b600;
+            }
+
+            QPushButton#convertButton:pressed,
+            QPushButton#cancelButton:pressed {
+                background-color: #b39500;
+            }
+
             QPushButton:disabled {
                 background-color: #d3d3d3;
                 color: #888;
@@ -272,11 +289,13 @@ class OpusToMp3Converter(QWidget):
         button_layout = QHBoxLayout()
 
         self.convert_button = QPushButton("Convert")
+        self.convert_button.setObjectName("convertButton")
         self.convert_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.convert_button.clicked.connect(self.start_conversion)
         self.convert_button.setEnabled(False)
 
         self.cancel_button = QPushButton("Cancel")
+        self.cancel_button.setObjectName("cancelButton")
         self.cancel_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.cancel_button.clicked.connect(self.cancel_conversion)
         self.cancel_button.setEnabled(False)
