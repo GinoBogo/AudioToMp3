@@ -109,8 +109,8 @@ class OpusToMp3Converter(QWidget):
         self._setup_file_table(layout)
         self._setup_selection_buttons(layout)
         self._setup_action_buttons(layout)
-        self._setup_progress_bar(layout)
         self._setup_output_log(layout)
+        self._setup_progress_bar(layout)
 
     def _apply_styles(self):
         """Applies CSS styles to the application.
@@ -245,9 +245,9 @@ class OpusToMp3Converter(QWidget):
 
         # Configure header resize modes
         header = self.file_table.horizontalHeader()
-        header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive)
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Interactive)
 
         self.file_table.itemChanged.connect(self._update_buttons_state)
 
