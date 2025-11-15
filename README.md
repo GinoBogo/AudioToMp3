@@ -1,4 +1,4 @@
-# audio2mp3
+# AudioToMp3
 GUI application that converts Opus and MKA audio files to MP3 format.
 
 This script provides a user-friendly graphical interface for converting Opus (.opus) and MKA (.mka) audio files into the more widely compatible MP3 format. It's designed for simplicity and efficiency, allowing users to easily select Opus files, convert them, and save them as MP3s with just a few clicks. The application handles the underlying conversion process, making it accessible even for users who are not familiar with command-line tools.
@@ -30,8 +30,8 @@ To run this application, you need to have Python installed, along with the follo
 
 1.  **Clone the repository:**
     ```bash
-    git clone https://github.com/your-username/audio2mp3.git
-    cd audio2mp3
+    git clone https://github.com/your-username/AudioToMp3.git
+    cd AudioToMp3
     ```
 2.  **Create and activate a virtual environment (recommended):**
     ```bash
