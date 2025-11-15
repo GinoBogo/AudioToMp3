@@ -1,13 +1,13 @@
 #!/usr/bin/env python
 
 """
-Opus to MP3 Converter Application
-Author: Gino Bogo
+Opus and MKA to MP3 Converter Application Author: Gino Bogo
 
 This script provides a graphical user interface (GUI) application for converting
-Opus audio files to MP3 format. It utilizes FFmpeg for the conversion process,
-including a two-pass loudnorm filter for consistent audio levels. The application
-supports batch conversion, progress tracking, and logging of conversion events.
+Opus and MKA audio files to MP3 format. It utilizes FFmpeg for the conversion
+process, including a two-pass loudnorm filter for consistent audio levels. The
+application supports batch conversion, progress tracking, and logging of
+conversion events.
 """
 
 import configparser
@@ -21,6 +21,7 @@ from enum import Enum
 
 import base64
 from mutagen.id3 import ID3
+from mutagen._file import File
 from mutagen.id3._frames import APIC, TIT2, TPE1, TALB, TDRC, TCON, TRCK
 from mutagen.mp3 import MP3
 from mutagen.oggopus import OggOpus
@@ -79,9 +80,9 @@ class LogType(Enum):
 
 
 class ConversionThread(QThread):
-    """QThread for handling Opus to MP3 conversion in a separate thread.
+    """QThread for handling Opus and MKA to MP3 conversion in a separate thread.
 
-    Manages the conversion of multiple Opus files to MP3 format, including
+    Manages the conversion of multiple Opus and MKA files to MP3 format, including
     progress tracking, output logging, and cancellation.
     """
 
@@ -94,7 +95,7 @@ class ConversionThread(QThread):
         """Initializes the ConversionThread.
 
         Args:
-            files_to_convert (list): A list of absolute paths to Opus files to
+            files_to_convert (list): A list of absolute paths to Opus and MKA files to
             convert. dest_dir (str): The absolute path to the destination
             directory for MP3 files.
         """
@@ -111,13 +112,13 @@ class ConversionThread(QThread):
     ############################################################################
 
     def convert_file(self, src_path):
-        """Converts a single Opus file to MP3.
+        """Converts a single Opus or MKA file to MP3.
 
         Orchestrates the conversion process for a single file, including
         handling existing files, executing FFmpeg, and processing results.
 
         Args:
-            src_path (str): The absolute path to the source Opus file.
+            src_path (str): The absolute path to the source Opus or MKA file.
 
         Raises:
             FileNotFoundError: If `ffmpeg` is not found during execution.
@@ -126,11 +127,11 @@ class ConversionThread(QThread):
         if not self.running:
             return
 
-        opus_file = os.path.basename(src_path)
-        filename = os.path.splitext(opus_file)[0]
+        src_file = os.path.basename(src_path)
+        filename = os.path.splitext(src_file)[0]
         dest_path = os.path.join(self.dest_dir, f"{filename}.mp3")
 
-        self._handle_existing_file(dest_path, opus_file)
+        self._handle_existing_file(dest_path, src_file)
 
         try:
             # First pass
@@ -142,12 +143,12 @@ class ConversionThread(QThread):
                 src_path, dest_path, loudnorm_stats
             )
             returncode, output = self._execute_second_pass(
-                second_pass_command, opus_file
+                second_pass_command, src_file
             )
-            self._handle_conversion_result(returncode, output, opus_file)
+            self._handle_conversion_result(returncode, output, src_file)
             if returncode == 0:
                 # Find and copy cover art
-                picture = self._find_front_cover(src_path, opus_file)
+                picture = self._find_front_cover(src_path, src_file)
                 if picture:
                     self._copy_cover_art(dest_path, picture)
                 self._copy_id3_tags(src_path, dest_path)
@@ -158,10 +159,10 @@ class ConversionThread(QThread):
         except Exception as e:
             self.output.emit(
                 LogType.ERROR,
-                f"An error occurred during conversion of {opus_file}: {e}",
+                f"An error occurred during conversion of {src_file}: {e}",
             )
 
-    def _handle_existing_file(self, dest_path, opus_file):
+    def _handle_existing_file(self, dest_path, src_file):
         """Handles logging for existing files.
 
         Emits a log message indicating whether a file is being overwritten or
@@ -169,14 +170,14 @@ class ConversionThread(QThread):
 
         Args:
             dest_path (str): The absolute path to the destination MP3 file.
-            opus_file (str): The base name of the source Opus file.
+            src_file (str): The base name of the source file.
         """
         if os.path.exists(dest_path):
             self.output.emit(LogType.OVERWRITING, f"{os.path.basename(dest_path)}...")
         else:
-            self.output.emit(LogType.CONVERTING, f"{opus_file}...")
+            self.output.emit(LogType.CONVERTING, f"{src_file}...")
 
-    def _handle_conversion_result(self, returncode, output, opus_file):
+    def _handle_conversion_result(self, returncode, output, src_file):
         """Processes the result of a conversion attempt.
 
         Emits appropriate log messages and updates the progress bar based on the
@@ -184,20 +185,21 @@ class ConversionThread(QThread):
 
         Args:
             returncode (int): The exit code of the FFmpeg process. output (str):
-            The output captured from the FFmpeg process. opus_file (str): The
-            base name of the source Opus file.
+            The output captured from the FFmpeg process. src_file (str): The
+            base name of the source file.
         """
         if returncode == 0:
-            self.output.emit(LogType.FINISHED, f"{opus_file}.")
+            self.output.emit(LogType.FINISHED, f"{src_file}.")
 
             with self.lock:
                 self.completed_files += 1
-                # Emit the actual count (not percentage) since progress bar max is set to total files
+                # Emit the actual count (not percentage) since progress bar max
+                # is set to total files
                 self.progress.emit(self.completed_files)
         else:
             self.output.emit(
                 LogType.ERROR,
-                f"Converting {opus_file}. ffmpeg returned non-zero exit code.",
+                f"Converting {src_file}. ffmpeg returned non-zero exit code.",
             )
             self.output.emit(LogType.ERROR, f"{output.strip()}")
 
@@ -212,7 +214,7 @@ class ConversionThread(QThread):
         input, output, and audio filtering options.
 
         Args:
-            src_path (str): The absolute path to the source Opus file.
+            src_path (str): The absolute path to the source file.
 
         Returns:
             list: A list of strings representing the FFmpeg command.
@@ -235,7 +237,7 @@ class ConversionThread(QThread):
         input, output, and audio filtering options.
 
         Args:
-            src_path (str): The absolute path to the source Opus file. dest_path
+            src_path (str): The absolute path to the source file. dest_path
             (str): The absolute path to the destination MP3 file. loudnorm_stats
             (dict): A dictionary of loudnorm stats from the first pass.
 
@@ -309,14 +311,14 @@ class ConversionThread(QThread):
         except Exception as e:
             raise RuntimeError(f"First pass failed: {e}")
 
-    def _execute_second_pass(self, command, opus_file):
+    def _execute_second_pass(self, command, src_file):
         """Executes the second pass of FFmpeg loudnorm.
 
         Runs the FFmpeg command as a subprocess and captures its output.
 
         Args:
             command (list): A list of strings representing the FFmpeg command.
-            opus_file (str): The base name of the source Opus file.
+            src_file (str): The base name of the source file.
 
         Returns:
             tuple: A tuple containing the return code of the FFmpeg process and
@@ -372,13 +374,29 @@ class ConversionThread(QThread):
     # Metadata Handling Methods
     ############################################################################
 
-    def _copy_id3_tags(self, src_opus_path, dest_mp3_path):
-        """Copies ID3 tags from an Opus file to an MP3 file.
+    def _copy_id3_tags(self, src_path, dest_mp3_path):
+        """Copies ID3 tags from an Opus or MKA file to an MP3 file.
 
         Args:
-            src_opus_path (str): The absolute path to the source Opus file.
+            src_path (str): The absolute path to the source file.
             dest_mp3_path (str): The absolute path to the destination MP3 file.
         """
+        try:
+            file_ext = os.path.splitext(src_path)[1].lower()
+
+            if file_ext == ".opus":
+                self._copy_opus_tags(src_path, dest_mp3_path)
+            elif file_ext == ".mka":
+                self._copy_mka_tags(src_path, dest_mp3_path)
+
+        except Exception as e:
+            self.output.emit(
+                LogType.WARNING,
+                f"Error copying ID3 tags from {os.path.basename(src_path)} to {os.path.basename(dest_mp3_path)}: {e}",
+            )
+
+    def _copy_opus_tags(self, src_opus_path, dest_mp3_path):
+        """Copies ID3 tags from an Opus file to an MP3 file."""
         try:
             opus_audio = OggOpus(src_opus_path)
             mp3_audio = MP3(dest_mp3_path, ID3=ID3)
@@ -399,6 +417,37 @@ class ConversionThread(QThread):
             self.output.emit(
                 LogType.WARNING,
                 f"Error copying ID3 tags from {os.path.basename(src_opus_path)} to {os.path.basename(dest_mp3_path)}: {e}",
+            )
+
+    def _copy_mka_tags(self, src_mka_path, dest_mp3_path):
+        """Copies ID3 tags from an MKA file to an MP3 file."""
+        try:
+            mka_audio = File(src_mka_path)
+            if mka_audio is None:
+                self.output.emit(
+                    LogType.WARNING,
+                    f"Could not read metadata from {os.path.basename(src_mka_path)}. Skipping tag copy.",
+                )
+                return
+
+            mp3_audio = MP3(dest_mp3_path, ID3=ID3)
+
+            if mp3_audio.tags is None:
+                mp3_audio.tags = ID3()
+
+            if mka_audio.tags:
+                self._process_mka_tags(
+                    mka_audio, mp3_audio, os.path.basename(src_mka_path)
+                )
+                mp3_audio.save()
+                self.output.emit(
+                    LogType.INFO,
+                    f"Copied ID3 tags from {os.path.basename(src_mka_path)} to {os.path.basename(dest_mp3_path)}.",
+                )
+        except Exception as e:
+            self.output.emit(
+                LogType.WARNING,
+                f"Error copying ID3 tags from {os.path.basename(src_mka_path)} to {os.path.basename(dest_mp3_path)}: {e}",
             )
 
     def _process_opus_tags(self, opus_audio, mp3_audio, src_filename):
@@ -427,8 +476,34 @@ class ConversionThread(QThread):
             elif tag_name in TAG_MAPPING:
                 self._copy_simple_tag(tag_name, tag_value, TAG_MAPPING, mp3_audio)
 
+    def _process_mka_tags(self, mka_audio, mp3_audio, src_filename):
+        """Process and copy tags from MKA to MP3.
+
+        Args:
+            mka_audio: The MKA audio file object.
+            mp3_audio: The MP3 audio file object to copy tags to.
+            src_filename: The source filename for error messages.
+        """
+        TAG_MAPPING = {
+            "title": TIT2,
+            "artist": TPE1,
+            "album": TALB,
+            "genre": TCON,
+            "tracknumber": TRCK,
+        }
+
+        for tag_name, tag_value in mka_audio.tags.items():
+            if tag_name == "metadata_block_picture":
+                self._handle_cover_art(tag_value, mp3_audio)
+                continue
+
+            if tag_name == "date":
+                self._handle_date_tag(tag_value, mp3_audio, src_filename)
+            elif tag_name in TAG_MAPPING:
+                self._copy_simple_tag(tag_name, tag_value, TAG_MAPPING, mp3_audio)
+
     def _copy_simple_tag(self, tag_name, tag_value, tag_mapping, mp3_audio):
-        """Copy a simple tag from Opus to MP3.
+        """Copy a simple tag from source to MP3.
 
         Args:
             tag_name: The name of the tag to copy.
@@ -458,10 +533,10 @@ class ConversionThread(QThread):
             return None
 
     def _handle_date_tag(self, tag_value, mp3_audio, src_filename):
-        """Handle date tag conversion from Opus to MP3.
+        """Handle date tag conversion from source to MP3.
 
         Args:
-            tag_value: The date value from the Opus file.
+            tag_value: The date value from the source file.
             mp3_audio: The MP3 audio file object to add the date tag to.
             src_filename: The source filename for error messages.
         """
@@ -518,16 +593,27 @@ class ConversionThread(QThread):
                 f"Failed to add cover art to {os.path.basename(mp3_path)}: {e}",
             )
 
-    def _find_front_cover(self, src_opus_path, src_opus_basename):
-        """Finds the front cover Picture object from an OggOpus file.
+    def _find_front_cover(self, src_path, src_basename):
+        """Finds the front cover Picture object from an Opus or MKA file.
 
         Args:
-            src_opus_path (str): The absolute path to the source Opus file.
-            src_opus_basename (str): The base name of the source Opus file for logging.
+            src_path (str): The absolute path to the source file.
+            src_basename (str): The base name of the source file for logging.
 
         Returns:
             Picture or None: The front cover Picture object if found, otherwise None.
         """
+        file_ext = os.path.splitext(src_path)[1].lower()
+
+        if file_ext == ".opus":
+            return self._find_opus_cover_art(src_path, src_basename)
+        elif file_ext == ".mka":
+            return self._find_mka_cover_art(src_path, src_basename)
+        else:
+            return None
+
+    def _find_opus_cover_art(self, src_opus_path, src_opus_basename):
+        """Finds the front cover Picture object from an OggOpus file."""
         try:
             opus_audio = OggOpus(src_opus_path)
         except Exception as e:
@@ -549,9 +635,35 @@ class ConversionThread(QThread):
             )
         return None
 
-    def _get_picture_from_metadata_block(
-        self, metadata_block_pictures, src_opus_basename
-    ):
+    def _find_mka_cover_art(self, src_mka_path, src_mka_basename):
+        try:
+            mka_audio = File(src_mka_path)
+            if mka_audio is None:
+                self.output.emit(
+                    LogType.WARNING,
+                    f"Could not read metadata from {os.path.basename(src_mka_path)}. Skipping cover art search.",
+                )
+                return None
+        except Exception as e:
+            self.output.emit(
+                LogType.WARNING,
+                f"Failed to process MKA file with mutagen.File() for {src_mka_basename}: {e}",
+            )
+            return None
+
+        if mka_audio.tags:
+            metadata_block_pictures = mka_audio.tags.get("metadata_block_picture")
+            return self._get_picture_from_metadata_block(
+                metadata_block_pictures, src_mka_basename
+            )
+
+        self.output.emit(
+            LogType.WARNING,
+            f"No front cover found in {src_mka_basename}",
+        )
+        return None
+
+    def _get_picture_from_metadata_block(self, metadata_block_pictures, src_basename):
         """Extracts the front cover art from the metadata of an Opus file.
 
         This function iterates through a list of picture data blocks, decodes
@@ -559,8 +671,8 @@ class ConversionThread(QThread):
 
         Args:
             metadata_block_pictures (list or str): A list of base64-encoded
-            picture data blocks, or a single block. src_opus_basename (str): The
-            base name of the source Opus file, used for logging.
+            picture data blocks, or a single block. src_basename (str): The
+            base name of the source file, used for logging.
 
         Returns:
             mutagen.flac.Picture or mutagen.id3.APIC or None: The extracted
@@ -569,7 +681,7 @@ class ConversionThread(QThread):
         if not metadata_block_pictures:
             self.output.emit(
                 LogType.WARNING,
-                f"No metadata block pictures found in {src_opus_basename}",
+                f"No metadata block pictures found in {src_basename}",
             )
             return None
 
@@ -577,25 +689,25 @@ class ConversionThread(QThread):
             metadata_block_pictures = [metadata_block_pictures]
 
         for pic_data_b64 in metadata_block_pictures:
-            pic_data = self._decode_picture_data(pic_data_b64, src_opus_basename)
+            pic_data = self._decode_picture_data(pic_data_b64, src_basename)
             if not pic_data:
                 continue
 
-            picture = self._create_picture_object(pic_data, src_opus_basename)
+            picture = self._create_picture_object(pic_data, src_basename)
             if picture:
                 return picture
 
-            apic_frame = self._create_apic_frame(pic_data, src_opus_basename)
+            apic_frame = self._create_apic_frame(pic_data, src_basename)
             if apic_frame:
                 return apic_frame
 
         self.output.emit(
             LogType.WARNING,
-            f"No valid front cover found in {src_opus_basename}",
+            f"No valid front cover found in {src_basename}",
         )
         return None
 
-    def _decode_picture_data(self, pic_data_b64, src_opus_basename):
+    def _decode_picture_data(self, pic_data_b64, src_basename):
         """Decodes picture data from base64 or bytes."""
         try:
             if isinstance(pic_data_b64, str):
@@ -607,11 +719,11 @@ class ConversionThread(QThread):
         except Exception as e:
             self.output.emit(
                 LogType.WARNING,
-                f"Failed to decode picture data for {src_opus_basename}: {e}",
+                f"Failed to decode picture data for {src_basename}: {e}",
             )
             return None
 
-    def _create_picture_object(self, pic_data, src_opus_basename):
+    def _create_picture_object(self, pic_data, src_basename):
         """Tries to create a Picture object from the data."""
         try:
             picture = Picture(pic_data)
@@ -621,7 +733,7 @@ class ConversionThread(QThread):
             # If creating Picture fails, we'll try creating an APIC frame next.
             pass
 
-    def _create_apic_frame(self, pic_data, src_opus_basename):
+    def _create_apic_frame(self, pic_data, src_basename):
         """Creates an APIC frame as a fallback."""
         try:
             mime = "image/jpeg"  # default to jpeg
@@ -638,7 +750,7 @@ class ConversionThread(QThread):
         except Exception as e:
             self.output.emit(
                 LogType.WARNING,
-                f"Failed to create APIC frame for {src_opus_basename}: {e}",
+                f"Failed to create APIC frame for {src_basename}: {e}",
             )
             return None
 
@@ -646,7 +758,7 @@ class ConversionThread(QThread):
         """Extracts a Picture object from picture data.
 
         Args:
-            picture_data: The picture data from the Opus file.
+            picture_data: The picture data from the source file.
 
         Returns:
             A Picture object or the original picture data.
@@ -666,7 +778,7 @@ class ConversionThread(QThread):
         """Handle cover art from metadata block picture.
 
         Args:
-            picture_data: The picture data from the Opus file.
+            picture_data: The picture data from the source file.
             mp3_audio: The MP3 audio file object to add the cover art to.
         """
         try:
@@ -753,7 +865,7 @@ class ConversionThread(QThread):
 
 
 class OpusToMp3Converter(QWidget):
-    """Main application window for the Opus to MP3 Converter.
+    """Main application window for the Opus and MKA to MP3 Converter.
 
     Provides the user interface for selecting files, managing conversions, and
     displaying progress and output.
@@ -762,7 +874,7 @@ class OpusToMp3Converter(QWidget):
     def __init__(self):
         """Initializes the OpusToMp3Converter application window."""
         super().__init__()
-        self.setWindowTitle("Opus to MP3 Converter")
+        self.setWindowTitle("Opus and MKA to MP3 Converter")
         self.setMinimumSize(600, 800)
         self.conversion_thread = None
         self._setup_ui()
@@ -906,7 +1018,7 @@ class OpusToMp3Converter(QWidget):
     def _setup_file_table(self, parent_layout: QVBoxLayout):
         """Sets up the file table widget.
 
-        Configures the table for displaying Opus files and their conversion
+        Configures the table for displaying Opus and MKA files and their conversion
         status.
 
         Args:
@@ -1076,20 +1188,20 @@ class OpusToMp3Converter(QWidget):
             return False
         return True
 
-    def _get_opus_files(self, src_dir):
-        """Gets a list of Opus files in the specified directory.
+    def _get_audio_files(self, src_dir):
+        """Gets a list of Opus and MKA files in the specified directory.
 
-        Scans the given source directory for files ending with '.opus'.
+        Scans the given source directory for files ending with '.opus' or '.mka'.
 
         Args:
             src_dir (str): The absolute path to the source directory.
 
         Returns:
-            list: A list of Opus filenames found in the directory.
+            list: A list of audio filenames found in the directory.
         """
         try:
             all_files = os.listdir(src_dir)
-            opus_files = []
+            audio_files = []
             total_files = len(all_files)
 
             # Set up progress bar for file scanning
@@ -1098,8 +1210,8 @@ class OpusToMp3Converter(QWidget):
             self.progress_bar.setFormat("Scanning files: %p%")
 
             for i, filename in enumerate(all_files):
-                if filename.endswith(".opus"):
-                    opus_files.append(filename)
+                if filename.lower().endswith((".opus", ".mka")):
+                    audio_files.append(filename)
 
                 # Update progress every 10 files to avoid UI lag
                 if i % 10 == 0 or i == total_files - 1:
@@ -1110,22 +1222,22 @@ class OpusToMp3Converter(QWidget):
             self.progress_bar.setFormat("%p%")
             self.progress_bar.setValue(0)
 
-            return opus_files
+            return audio_files
         except FileNotFoundError:
             self.output_log.append(f"Source directory not found: {src_dir}")
             self.progress_bar.setValue(0)
             return []
 
-    def _add_file_to_table(self, row, opus_file, src_dir):
+    def _add_file_to_table(self, row, audio_file, src_dir):
         """Adds a file to the file table.
 
         Inserts a new row into the file table with a checkbox, filename, and
         duration.
 
         Args:
-            row (int): The row index where the file should be added. opus_file
-            (str): The filename of the Opus file. src_dir (str): The source
-            directory of the Opus file.
+            row (int): The row index where the file should be added. audio_file
+            (str): The filename of the audio file. src_dir (str): The source
+            directory of the audio file.
         """
         self.file_table.insertRow(row)
 
@@ -1135,11 +1247,11 @@ class OpusToMp3Converter(QWidget):
         check_item.setCheckState(Qt.CheckState.Checked)
 
         # Create filename item
-        file_item = QTableWidgetItem(opus_file)
+        file_item = QTableWidgetItem(audio_file)
         file_item.setFlags(file_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
 
         # Create duration item
-        duration_str = self.get_duration_str(os.path.join(src_dir, opus_file))
+        duration_str = self.get_duration_str(os.path.join(src_dir, audio_file))
         duration_item = QTableWidgetItem(duration_str)
         duration_item.setFlags(duration_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
 
@@ -1252,7 +1364,7 @@ class OpusToMp3Converter(QWidget):
             )
 
     def refresh_files(self):
-        """Refreshes the list of Opus files in the source directory.
+        """Refreshes the list of Opus and MKA files in the source directory.
 
         Clears the current file table and repopulates it with files from the
         selected source directory.
@@ -1273,25 +1385,25 @@ class OpusToMp3Converter(QWidget):
         self.file_table.setRowCount(0)
 
         # Show scanning progress
-        self.append_log(LogType.INFO, "Scanning source folder for Opus files...")
+        self.append_log(LogType.INFO, "Scanning source folder for audio files...")
 
-        opus_files = self._get_opus_files(src_dir)
+        audio_files = self._get_audio_files(src_dir)
 
         self.append_log(
-            LogType.INFO, f"Found {len(opus_files)} Opus files in source folder."
+            LogType.INFO, f"Found {len(audio_files)} audio files in source folder."
         )
 
         # Update progress bar for table population
-        if opus_files:
+        if audio_files:
             self.progress_bar.setValue(0)
-            self.progress_bar.setMaximum(len(opus_files))
+            self.progress_bar.setMaximum(len(audio_files))
             self.progress_bar.setFormat("Loading files: %p%")
 
-            for i, opus_file in enumerate(opus_files):
-                self._add_file_to_table(i, opus_file, src_dir)
+            for i, audio_file in enumerate(audio_files):
+                self._add_file_to_table(i, audio_file, src_dir)
 
                 # Update progress every 5 files to avoid UI lag
-                if i % 5 == 0 or i == len(opus_files) - 1:
+                if i % 5 == 0 or i == len(audio_files) - 1:
                     self.progress_bar.setValue(i + 1)
                     QApplication.processEvents()  # Keep UI responsive
 
@@ -1398,11 +1510,11 @@ class OpusToMp3Converter(QWidget):
     def _get_selected_files(self):
         """Gets a list of selected files for conversion.
 
-        Iterates through the file table and collects paths of checked Opus
+        Iterates through the file table and collects paths of checked audio
         files.
 
         Returns:
-            list: A list of absolute paths to the selected Opus files.
+            list: A list of absolute paths to the selected audio files.
         """
         files_to_convert = []
         src_dir = self.src_line_edit.text()
@@ -1472,7 +1584,7 @@ class OpusToMp3Converter(QWidget):
         connects its signals.
 
         Args:
-            files_to_convert (list): A list of absolute paths to Opus files to
+            files_to_convert (list): A list of absolute paths to audio files to
             convert. dest_dir (str): The absolute path to the destination
             directory for MP3 files.
         """
@@ -1576,7 +1688,7 @@ class OpusToMp3Converter(QWidget):
 def main():
     """Main application entry point.
 
-    Initializes and runs the Opus to MP3 Converter application.
+    Initializes and runs the Opus and MKA to MP3 Converter application.
     """
     try:
         app = QApplication(sys.argv)
