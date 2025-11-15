@@ -106,7 +106,7 @@ class ConversionThread(QThread):
         self.dest_dir = dest_dir
         self.running = True
         self.completed_files = 0
-        self.total_files = len(files_to_convert)  # Store total count
+        self.total_files = len(files_to_convert)  # Store the total count of files.
         self.lock = threading.Lock()
 
     ############################################################################
@@ -195,8 +195,8 @@ class ConversionThread(QThread):
 
             with self.lock:
                 self.completed_files += 1
-                # Emit the actual count (not percentage) since progress bar max
-                # is set to total files
+                # Emit the actual count, not the percentage, since the progress bar's
+                # maximum is set to the total number of files.
                 self.progress.emit(self.completed_files)
         else:
             self.output.emit(
@@ -514,11 +514,11 @@ class ConversionThread(QThread):
             mp3_audio: The MP3 audio file object to add the tag to.
         """
         id3_frame_class = tag_mapping[tag_name]
-        # Handle both list and non-list tag values
+        # Handle both list and non-list tag values.
         text_values = tag_value if isinstance(tag_value, list) else [str(tag_value)]
-        # Ensure all values are strings
+        # Ensure all values are strings.
         text_values = [str(v) for v in text_values if v is not None]
-        if text_values:  # Only add if we have valid values
+        if text_values:  # Only add the tag if there are valid values.
             mp3_audio.tags[id3_frame_class.__name__] = id3_frame_class(
                 encoding=3, text=text_values
             )
@@ -572,19 +572,19 @@ class ConversionThread(QThread):
         try:
             mp3_audio = MP3(mp3_path, ID3=ID3)
 
-            # Ensure ID3 tags exist
+            # Ensure that ID3 tags exist.
             if mp3_audio.tags is None:
                 mp3_audio.tags = ID3()
-                mp3_audio.save()  # Save the newly created tags
+                mp3_audio.save()  # Save the newly created tags.
 
-            # Remove existing APIC frames to avoid duplicates
+            # Remove existing APIC frames to avoid duplicates.
             mp3_audio.tags.delall("APIC")
 
             mp3_audio.tags.add(
                 APIC(
                     encoding=3,
                     mime=picture.mime,
-                    type=3,  # 3 is for the front cover
+                    type=3,  # Use type 3 for the front cover.
                     desc="Cover",
                     data=picture.data,
                 )
@@ -729,7 +729,7 @@ class ConversionThread(QThread):
         """Tries to create a Picture object from the data."""
         try:
             picture = Picture(pic_data)
-            if picture.type == 3:  # 3 is for the front cover
+            if picture.type == 3:  # Type 3 is for the front cover.
                 return picture
         except Exception:
             # If creating Picture fails, we'll try creating an APIC frame next.
@@ -738,14 +738,14 @@ class ConversionThread(QThread):
     def _create_apic_frame(self, pic_data, src_basename):
         """Creates an APIC frame as a fallback."""
         try:
-            mime = "image/jpeg"  # default to jpeg
+            mime = "image/jpeg"  # Default to JPEG.
             if pic_data.startswith(b"\x89PNG"):
                 mime = "image/png"
 
             return APIC(
-                encoding=3,  # UTF-8
+                encoding=3,  # Use UTF-8 encoding.
                 mime=mime,
-                type=3,  # 3 is for the front cover
+                type=3,  # Use type 3 for the front cover.
                 desc="Cover",
                 data=pic_data,
             )
@@ -866,7 +866,7 @@ class ConversionThread(QThread):
 ################################################################################
 
 
-class OpusToMp3Converter(QWidget):
+class AudioToMp3Converter(QWidget):
     """Main application window for the Opus and MKA to MP3 Converter.
 
     Provides the user interface for selecting files, managing conversions, and
@@ -874,7 +874,7 @@ class OpusToMp3Converter(QWidget):
     """
 
     def __init__(self):
-        """Initializes the OpusToMp3Converter application window."""
+        """Initializes the AudioToMp3Converter application window."""
         super().__init__()
         self.setWindowTitle("Audio to MP3 Converter")
         self.setMinimumSize(600, 800)
@@ -1119,6 +1119,7 @@ class OpusToMp3Converter(QWidget):
         """
         self.output_log = QTextEdit()
         self.output_log.setReadOnly(True)
+        self.output_log.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
         parent_layout.addWidget(self.output_log)
 
     ############################################################################
@@ -1148,7 +1149,7 @@ class OpusToMp3Converter(QWidget):
     def _save_settings(self):
         """Saves current window settings to the configuration file."""
         config = configparser.ConfigParser()
-        # Read existing config to preserve other sections if they exist
+        # Read the existing config to preserve other sections.
         config.read(CONFIG_FILE)
 
         if "MainWindow" not in config:
@@ -1206,7 +1207,7 @@ class OpusToMp3Converter(QWidget):
             audio_files = []
             total_files = len(all_files)
 
-            # Set up progress bar for file scanning
+            # Set up the progress bar for file scanning.
             self.progress_bar.setValue(0)
             self.progress_bar.setMaximum(total_files)
             self.progress_bar.setFormat("Scanning files: %p%")
@@ -1215,12 +1216,12 @@ class OpusToMp3Converter(QWidget):
                 if filename.lower().endswith((".opus", ".mka")):
                     audio_files.append(filename)
 
-                # Update progress every 10 files to avoid UI lag
+                # Update progress every 10 files to avoid UI lag.
                 if i % 10 == 0 or i == total_files - 1:
                     self.progress_bar.setValue(i + 1)
                     QApplication.processEvents()  # Keep UI responsive
 
-            # Reset progress bar format after scanning
+            # Reset the progress bar format after scanning.
             self.progress_bar.setFormat("%p%")
             self.progress_bar.setValue(0)
 
@@ -1382,11 +1383,11 @@ class OpusToMp3Converter(QWidget):
         try:
             self.file_table.itemChanged.disconnect(self._update_buttons_state)
         except RuntimeError:
-            pass  # Ignore error if not connected
+            pass  # Ignore the error if not connected.
 
         self.file_table.setRowCount(0)
 
-        # Show scanning progress
+        # Show scanning progress.
         self.append_log(LogType.INFO, "Scanning source folder for audio files...")
 
         audio_files = self._get_audio_files(src_dir)
@@ -1395,7 +1396,7 @@ class OpusToMp3Converter(QWidget):
             LogType.INFO, f"Found {len(audio_files)} audio files in source folder."
         )
 
-        # Update progress bar for table population
+        # Update the progress bar for table population.
         if audio_files:
             self.progress_bar.setValue(0)
             self.progress_bar.setMaximum(len(audio_files))
@@ -1404,12 +1405,12 @@ class OpusToMp3Converter(QWidget):
             for i, audio_file in enumerate(audio_files):
                 self._add_file_to_table(i, audio_file, src_dir)
 
-                # Update progress every 5 files to avoid UI lag
+                # Update progress every 5 files to avoid UI lag.
                 if i % 5 == 0 or i == len(audio_files) - 1:
                     self.progress_bar.setValue(i + 1)
                     QApplication.processEvents()  # Keep UI responsive
 
-            # Reset progress bar
+            # Reset the progress bar.
             self.progress_bar.setFormat("%p%")
             self.progress_bar.setValue(0)
 
@@ -1451,7 +1452,7 @@ class OpusToMp3Converter(QWidget):
         try:
             self.file_table.itemChanged.disconnect(self._update_buttons_state)
         except RuntimeError:
-            pass  # Ignore error if not connected
+            pass  # Ignore the error if not connected.
 
         for i in range(self.file_table.rowCount()):
             item = self.file_table.item(i, 0)
@@ -1575,8 +1576,8 @@ class OpusToMp3Converter(QWidget):
         self.progress_bar.setValue(0)
         self.progress_bar.setMaximum(
             len(files_to_convert)
-        )  # Set max to number of selected files
-        self.progress_bar.setFormat("%p%")  # Ensure format is reset
+        )  # Set the maximum to the number of selected files.
+        self.progress_bar.setFormat("%p%")  # Ensure the format is reset.
         self.output_log.clear()
 
     def _setup_conversion_thread(self, files_to_convert, dest_dir):
@@ -1613,7 +1614,7 @@ class OpusToMp3Converter(QWidget):
             self.output_log.append("No files selected for conversion.")
             return
 
-        self._prepare_conversion_ui(files_to_convert)  # Pass files list
+        self._prepare_conversion_ui(files_to_convert)  # Pass the list of files.
         self._setup_conversion_thread(files_to_convert, dest_dir)
         if self.conversion_thread is not None:
             self.conversion_thread.start()
@@ -1694,7 +1695,7 @@ def main():
     """
     try:
         app = QApplication(sys.argv)
-        converter = OpusToMp3Converter()
+        converter = AudioToMp3Converter()
         converter.show()
         sys.exit(app.exec())
     except Exception as e:
